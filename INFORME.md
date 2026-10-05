@@ -59,7 +59,13 @@ index.html ──┬── styles.css                 (presentación, identidad 
              ├── lib/pdf.min.js + worker    (pdf.js: leer y renderizar PDF)
              ├── lib/pdf-lib.min.js         (@cantoo/pdf-lib: escribir PDF)
              ├── lib/jszip.min.js           (ZIP en memoria)
-             └── app.js                     (estado + lógica + UI, sin frameworks)
+             └── js/                        (lógica, sin frameworks, scripts clásicos)
+                 ├── core.js                (estado `state` y utilidades)
+                 ├── domain.js              (selección de páginas y geometría)
+                 ├── pdf.js                 (apertura de PDF con pdf.js/pdf-lib)
+                 ├── docs.js                (carga de PDFs y de la firma)
+                 ├── viewer.js              (visor y posición)
+                 └── app.js                 (firmado, resultados y enlaces de eventos)
 ```
 
 - **Sin backend**: no hay peticiones de red; los archivos se leen con la File API y se escriben con `Blob`.
@@ -212,7 +218,7 @@ Firmar/
 └── web/                 ← versión vigente
     ├── index.html       estructura (5 pasos)
     ├── styles.css       identidad visual y componentes
-    ├── app.js           estado, lógica y UI
+    ├── js/              lógica: core, domain, pdf, docs, viewer, app
     ├── firma.ico        icono para acceso directo
     └── lib/             pdf.js, pdf-lib, jszip
 ```

@@ -52,7 +52,7 @@ Que el dueño bloqueó imprimir/copiar/editar. Eso no impide firmarlo, siempre q
 ## C. Código concreto del proyecto
 
 **13. ¿Dónde se calcula la posición de la firma?**
-En `layoutRect()` / `computePdfRect()` (`web/app.js`), que devuelven el rectángulo en puntos del PDF según el modo (fracción o centímetros).
+En `layoutRect()` / `computePdfRect()` (`web/js/domain.js`), que devuelven el rectángulo en puntos del PDF según el modo (fracción o centímetros).
 
 **14. ¿Cómo se interpreta "1,3,5-8"?**
 `parsePages()` tokeniza por comas, expande rangos con guion, valida números y devuelve errores legibles (`Página no válida: 'zz'`).
