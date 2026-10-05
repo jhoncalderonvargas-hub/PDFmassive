@@ -7,6 +7,8 @@ const state = {
   aspect: 1,
   docs: [],
   selectedPages: {},
+  rejected: [],
+  preset: null,
   layout: { mode: "fraction", fx: 0.6, fy: 0.8, fw: 0.26, x: 0, y: 0, w: 6 },
   positionMode: "all",
   pageLayouts: {},
@@ -150,6 +152,8 @@ function syncLayoutInputs(layout) {
   $("modeSelect").value = layout.mode;
   $("fractionBox").hidden = layout.mode !== "fraction";
   $("absoluteBox").hidden = layout.mode !== "absolute";
+  const presets = $("presetRow");
+  if (presets) presets.hidden = layout.mode !== "fraction";
   $("fx").value = (layout.fx * 100).toFixed(1);
   $("fy").value = (layout.fy * 100).toFixed(1);
   $("fw").value = (layout.fw * 100).toFixed(1);
@@ -220,6 +224,7 @@ function renderDocs() {
     list.innerHTML = '<div class="note">Aún no hay documentos.</div>';
     $("docSummary").textContent = "";
     $("docSelect").innerHTML = "";
+    updateSignButton();
     return;
   }
 
@@ -256,6 +261,7 @@ function renderDocs() {
     row.querySelector(".del").onclick = () => removeDoc(doc.id);
     row.querySelector(".pagesInput").oninput = (event) => {
       state.selectedPages[doc.id] = event.target.value;
+      updateSignButton();
       if (state.page.docId === doc.id) drawSignature();
     };
     list.appendChild(row);
@@ -267,6 +273,7 @@ function renderDocs() {
     .map((d) => `<option value="${d.id}">${escapeHtml(d.name)} (${d.pages} pág.)</option>`)
     .join("");
   select.value = state.docs.some((d) => d.id === previous) ? previous : current;
+  updateSignButton();
 }
 
 function bindDrop(zoneId, inputId, handler) {
@@ -325,6 +332,7 @@ async function uploadSignature(files) {
     $("sigBox2").hidden = false;
     $("btnSign").disabled = false;
     toast(`Firma cargada (${file.name})`, "good");
+    updateSignButton();
     drawSignature();
   } catch (error) {
     toast(`No se pudo cargar la firma: ${error.message}`, "bad");
@@ -365,7 +373,7 @@ async function loadPdf(buffer, password) {
     throw new Error(
       password
         ? "La contraseña no es correcta"
-        : "Requiere contraseña: escríbela en 'Contraseña PDF' (paso 5) y vuelve a cargar el archivo"
+        : "Requiere contraseña: escríbela en la fila del archivo y pulsa Reintentar"
     );
   }
   throw new Error("No se pudo abrir el PDF");
@@ -380,7 +388,7 @@ async function openWithPdfJs(getBytes, password) {
       return await pdfjsLib.getDocument({ data: await getBytes(), password: "" }).promise;
     }
     if (name.includes("Password")) {
-      throw new Error("Requiere contraseña: escríbela en 'Contraseña PDF' (paso 5)");
+      throw new Error("Requiere contraseña: escríbela en la fila del archivo y pulsa Reintentar");
     }
     throw error;
   }
@@ -391,6 +399,68 @@ async function inspectPdf(buffer, password) {
   const pages = doc.getPageCount();
   if (pages < 1) throw new Error("El PDF no tiene páginas");
   return { pages };
+}
+
+function renderRejected() {
+  const list = $("rejectList");
+  if (!list) return;
+  list.hidden = !state.rejected.length;
+  list.innerHTML = state.rejected
+    .map((item) => `
+      <div class="rejectItem${item.needsPassword ? " pass" : ""}" data-id="${item.id}">
+        <div class="rejectTxt">
+          <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
+          <span>${item.needsPassword ? "Pide contraseña: escríbela y pulsa Reintentar" : escapeHtml(item.reason)}</span>
+        </div>
+        <div class="rejectAct">
+          ${item.needsPassword ? `<input type="password" class="rejectPwd" placeholder="Contraseña" aria-label="Contraseña de ${escapeHtml(item.name)}">` : ""}
+          ${item.needsPassword ? '<button class="small retry" type="button">Reintentar</button>' : ""}
+          <button class="ghost small remove" type="button" title="Quitar de la lista">✕</button>
+        </div>
+      </div>`)
+    .join("");
+
+  list.querySelectorAll(".rejectItem").forEach((row) => {
+    const item = state.rejected.find((entry) => entry.id === row.dataset.id);
+    if (!item) return;
+    const pwd = row.querySelector(".rejectPwd");
+    const retry = row.querySelector(".retry");
+    if (retry) retry.onclick = () => retryRejected(item, pwd ? pwd.value : "");
+    if (pwd) {
+      pwd.onkeydown = (event) => { if (event.key === "Enter") retryRejected(item, pwd.value); };
+      if (!pwd.value) pwd.focus();
+    }
+    row.querySelector(".remove").onclick = () => {
+      state.rejected = state.rejected.filter((entry) => entry.id !== item.id);
+      renderRejected();
+    };
+  });
+}
+
+async function retryRejected(item, password) {
+  if (!item) return;
+  try {
+    const buffer = await item.file.arrayBuffer();
+    const info = await inspectPdf(buffer, password || "");
+    state.docs.push({
+      id: genId(),
+      file: item.file,
+      name: cleanName(item.file.name),
+      pages: info.pages,
+      size: item.file.size,
+    });
+    state.rejected = state.rejected.filter((entry) => entry.id !== item.id);
+    $("uploadNote").textContent = `${cleanName(item.file.name)} cargado correctamente`;
+    renderRejected();
+    renderDocs();
+    if (state.docs.length === 1) await openDoc(state.docs[0].id);
+    toast(`${cleanName(item.file.name)} cargado`, "good");
+  } catch (error) {
+    item.reason = error.message;
+    item.needsPassword = /contrase|password/i.test(error.message);
+    renderRejected();
+    toast(error.message, "bad");
+  }
 }
 
 async function uploadPdfs(files) {
@@ -416,9 +486,21 @@ async function uploadPdfs(files) {
         pages: info.pages,
         size: file.size,
       });
+      state.rejected = state.rejected.filter((entry) => entry.file.name !== file.name);
       added++;
     } catch (error) {
-      skipped.push({ name: file.name, reason: error.message });
+      const needsPassword = /contrase|password/i.test(error.message);
+      skipped.push({ name: file.name, reason: error.message, needsPassword });
+      const exists = state.rejected.find((entry) => entry.file.name === file.name);
+      const record = {
+        id: exists ? exists.id : genId(),
+        file,
+        name: file.name,
+        reason: error.message,
+        needsPassword,
+      };
+      if (exists) Object.assign(exists, record);
+      else state.rejected.push(record);
     }
     const done = index + 1;
     $("uploadBar").style.width = `${(done / pdfs.length) * 100}%`;
@@ -429,12 +511,21 @@ async function uploadPdfs(files) {
 
   $("uploadProgress").hidden = true;
   $("uploadBar").style.width = "0%";
-  const detail = skipped.slice(0, 3).map((s) => `${s.name} → ${s.reason}`).join(" · ");
-  $("uploadNote").textContent = added
-    ? `${added} documento(s) cargados${skipped.length ? ` · ${skipped.length} omitido(s): ${detail}${skipped.length > 3 ? " …" : ""}` : ""}`
-    : `No se cargó ningún PDF${skipped.length ? `: ${detail}` : ""}`;
+  const conClave = skipped.filter((item) => item.needsPassword);
+  const conError = skipped.filter((item) => !item.needsPassword);
+  const partes = [];
+  if (added) partes.push(`${added} documento(s) cargados`);
+  if (conClave.length) partes.push(`${conClave.length} pide(n) contraseña: escríbela en la fila y pulsa Reintentar`);
+  if (conError.length) {
+    const detail = conError.slice(0, 3).map((s) => `${s.name} → ${s.reason}`).join(" · ");
+    partes.push(`${conError.length} omitido(s): ${detail}${conError.length > 3 ? " …" : ""}`);
+  }
+  $("uploadNote").textContent = partes.length
+    ? partes.join(" · ")
+    : "No se cargó ningún PDF";
   state.busy = false;
 
+  renderRejected();
   renderDocs();
   if (state.docs.length && !state.page.docId) await openDoc(state.docs[0].id);
 }
@@ -576,12 +667,84 @@ function updatePageHint() {
     : "";
 }
 
-function pushLayout(patch) {
+function pushLayout(patch, keepPreset = false) {
   const target = currentEditLayout();
   Object.assign(target, patch);
+  if (!keepPreset) state.preset = null;
   syncLayoutInputs(target);
+  renderPresets();
   updatePosBar();
   drawSignature();
+}
+
+const PRESETS = [
+  { key: "bl", label: "Abajo izquierda", v: "b", h: "l" },
+  { key: "br", label: "Abajo derecha", v: "b", h: "r" },
+  { key: "tr", label: "Arriba derecha", v: "t", h: "r" },
+  { key: "c", label: "Centrado", v: "c", h: "c" },
+];
+
+function renderPresets() {
+  const row = $("presetRow");
+  if (!row) return;
+  row.querySelectorAll("[data-preset]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.preset === state.preset);
+  });
+}
+
+function applyPreset(key) {
+  const preset = PRESETS.find((item) => item.key === key);
+  if (!preset) return;
+  if (currentEditLayout().mode !== "fraction") applyMode("fraction");
+  const margin = 0.02;
+  const pageW = state.page.widthPt || 612;
+  const pageH = state.page.heightPt || 792;
+  const layout = currentEditLayout();
+  const w = layout.fw;
+  const h = (pageW * w * (state.aspect || 1)) / pageH;
+  const fx = preset.h === "r" ? Math.max(1 - margin - w, 0)
+    : preset.h === "c" ? Math.max((1 - w) / 2, 0)
+    : margin;
+  const fy = preset.v === "b" ? Math.max(1 - margin - h, 0)
+    : preset.v === "c" ? Math.max((1 - h) / 2, 0)
+    : margin;
+  state.preset = preset.key;
+  pushLayout({ fx, fy }, true);
+  toast(`Posición: ${preset.label}`, "good");
+}
+
+function signPlanInfo() {
+  let pages = 0;
+  let bad = "";
+  for (const doc of state.docs) {
+    const parsed = parsePages(selectedSpecOf(doc.id), doc.pages);
+    if (parsed.error) {
+      bad = `${doc.name}: ${parsed.error}`;
+      continue;
+    }
+    pages += parsed.pages === null ? doc.pages : parsed.pages.length;
+  }
+  return { docs: state.docs.length, pages, bad };
+}
+
+function updateSignButton() {
+  const button = $("btnSign");
+  const help = $("signHelp");
+  if (!button) return;
+  const plan = signPlanInfo();
+  button.textContent = plan.docs
+    ? `Firmar ${plan.docs} documento(s) · ${plan.pages} página(s)`
+    : "Firmar documentos";
+  let message = "";
+  if (!state.signature) message = "Falta cargar tu firma (paso 1).";
+  else if (!plan.docs) message = "Carga al menos un PDF (paso 2).";
+  else if (!plan.pages) message = "Ningún documento tiene páginas seleccionadas (paso 3).";
+  else if (plan.bad) message = plan.bad;
+  button.disabled = !!message;
+  if (help) {
+    help.hidden = !message;
+    help.textContent = message;
+  }
 }
 
 function initDrag() {
@@ -777,7 +940,7 @@ async function startSigning() {
   toast(failed ? `Listo: ${ok} firmados, ${failed} con error` : `Listo: ${ok} documentos firmados`, failed ? "" : "good");
   state.busy = false;
   setTimeout(() => { $("signProgress").hidden = true; }, 1200);
-  $("btnSign").disabled = false;
+  updateSignButton();
 }
 
 function renderResults() {
@@ -841,6 +1004,7 @@ async function init() {
   applyMode(state.layout.mode);
   pushLayout({});
   renderDocs();
+  renderRejected();
   updatePageHint();
 }
 
@@ -857,14 +1021,17 @@ function bindUi() {
     $("btnClearSig").hidden = true;
     $("sigBox2").hidden = true;
     $("btnSign").disabled = true;
+    updateSignButton();
   };
 
   $("btnClearPdfs").onclick = async () => {
     state.docs = [];
     state.selectedPages = {};
     state.results = [];
+    state.rejected = [];
     state.selectedDoc = null;
     await closePdf();
+    renderRejected();
     renderDocs();
     clearStage();
     $("signSummary").textContent = "";
@@ -896,9 +1063,20 @@ function bindUi() {
   $("btnApplyRange").onclick = applyToRange;
   $("btnResetPage").onclick = resetPageLayout;
 
+  const presetRow = $("presetRow");
+  if (presetRow) {
+    presetRow.querySelectorAll("[data-preset]").forEach((button) => {
+      button.onclick = () => applyPreset(button.dataset.preset);
+    });
+  }
+
   $("btnSign").onclick = startSigning;
   $("btnZip").onclick = downloadZip;
-  $("btnReset").onclick = () => location.reload();
+  $("btnReset").onclick = () => {
+    const hayTrabajo = state.docs.length || state.signature || state.rejected.length;
+    if (hayTrabajo && !confirm("Se perderán la firma y los documentos cargados.\n¿Empezar de nuevo?")) return;
+    location.reload();
+  };
 
   window.addEventListener("resize", drawSignature);
 }

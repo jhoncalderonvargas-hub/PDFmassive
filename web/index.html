@@ -76,6 +76,7 @@
       <input type="file" id="pdfInput" accept="application/pdf,.pdf" multiple hidden>
       <div class="progress" id="uploadProgress" hidden><div id="uploadBar"></div></div>
       <div id="uploadNote" class="note"></div>
+      <div id="rejectList" class="rejectList" hidden></div>
       <div class="row">
         <button id="btnClearPdfs" class="ghost small" type="button" hidden>Quitar todos</button>
         <span id="docSummary" class="note"></span>
@@ -144,38 +145,52 @@
         </div>
       </div>
       <div class="hint">En modo <strong>corregir página por página</strong>, mueve o redimensiona la firma en el visor y ese ajuste se guarda solo para la página visible; las demás conservan la posición general.</div>
-      <div class="row">
-        <label class="grow">Modo
-          <select id="modeSelect">
-            <option value="fraction">Proporción de la página (se adapta a cada tamaño)</option>
-            <option value="absolute">Posición fija en cm desde la esquina superior izquierda</option>
-          </select>
-        </label>
+
+      <div class="presetRow" id="presetRow">
+        <span class="presetLbl">Ubicación rápida:</span>
+        <button class="small preset" type="button" data-preset="bl">Abajo izquierda</button>
+        <button class="small preset" type="button" data-preset="br">Abajo derecha</button>
+        <button class="small preset" type="button" data-preset="tr">Arriba derecha</button>
+        <button class="small preset" type="button" data-preset="c">Centrado</button>
       </div>
 
-      <div id="fractionBox" class="grid3">
-        <label>Horizontal (%)
-          <input type="number" id="fx" step="0.5" value="60">
-        </label>
-        <label>Vertical (%)
-          <input type="number" id="fy" step="0.5" value="80">
-        </label>
-        <label>Ancho (% de página)
-          <input type="number" id="fw" step="0.5" value="26">
-        </label>
-      </div>
+      <details class="adv" id="advBox">
+        <summary>Ajuste avanzado: modo, porcentajes o centímetros</summary>
 
-      <div id="absoluteBox" class="grid3" hidden>
-        <label>Horizontal (cm)
-          <input type="number" id="absX" step="0.1" value="0">
-        </label>
-        <label>Vertical (cm)
-          <input type="number" id="absY" step="0.1" value="0">
-        </label>
-        <label>Ancho (cm)
-          <input type="number" id="absW" step="0.1" value="6">
-        </label>
-      </div>
+        <div class="row">
+          <label class="grow">Modo
+            <select id="modeSelect">
+              <option value="fraction">Proporción de la página (se adapta a cada tamaño)</option>
+              <option value="absolute">Posición fija en cm desde la esquina superior izquierda</option>
+            </select>
+          </label>
+        </div>
+        <p class="advHint">La <strong>proporción</strong> mantiene la misma posición relativa en cualquier tamaño de página; la <strong>posición fija</strong> deja la firma con el mismo tamaño físico en centímetros en todos los documentos.</p>
+
+        <div id="fractionBox" class="grid3">
+          <label>Horizontal (%)
+            <input type="number" id="fx" step="0.5" value="60">
+          </label>
+          <label>Vertical (%)
+            <input type="number" id="fy" step="0.5" value="80">
+          </label>
+          <label>Ancho (% de página)
+            <input type="number" id="fw" step="0.5" value="26">
+          </label>
+        </div>
+
+        <div id="absoluteBox" class="grid3" hidden>
+          <label>Horizontal (cm)
+            <input type="number" id="absX" step="0.1" value="0">
+          </label>
+          <label>Vertical (cm)
+            <input type="number" id="absY" step="0.1" value="0">
+          </label>
+          <label>Ancho (cm)
+            <input type="number" id="absW" step="0.1" value="6">
+          </label>
+        </div>
+      </details>
 
     </div>
 
@@ -192,6 +207,7 @@
         </label>
         <button id="btnSign" class="primary" type="button">Firmar documentos</button>
       </div>
+      <div id="signHelp" class="hint warn" hidden></div>
       <div class="progress" id="signProgress" hidden><div id="signBar"></div></div>
       <div id="signSummary" class="note"></div>
       <div id="resultList" class="results"></div>
