@@ -71,6 +71,35 @@ function selectedSpec(docId) {
   return node ? node.value.trim() : "todas";
 }
 
+function parsePagesSpec(spec, pageCount) {
+  const text = String(spec || "").trim().toLowerCase();
+  if (["", "todas", "todos", "all", "*"].includes(text)) return null;
+  if (["primera", "first"].includes(text)) return [0];
+  if (["ultima", "última", "last"].includes(text)) return [pageCount - 1];
+  const pages = [];
+  for (const chunk of text.replace(/;/g, ",").replace(/\s/g, "").split(",")) {
+    if (!chunk) continue;
+    if (chunk.includes("-")) {
+      const [head, tail] = chunk.split("-");
+      if (!/^\d+$/.test(head) || !/^\d+$/.test(tail)) return { error: `Rango de páginas no válido: '${chunk}'` };
+      let start = Number(head);
+      let end = Number(tail);
+      if (start > end) [start, end] = [end, start];
+      for (let p = start - 1; p < end; p++) pages.push(p);
+    } else {
+      if (!/^\d+$/.test(chunk)) return { error: `Página no válida: '${chunk}'` };
+      pages.push(Number(chunk) - 1);
+    }
+  }
+  return pages.filter((p) => p >= 0 && p < pageCount);
+}
+
+function pageIsSelected(docId, index, total) {
+  const parsed = parsePagesSpec(selectedSpec(docId), total);
+  if (!parsed || parsed.error) return true;
+  return parsed.includes(index - 1);
+}
+
 function renderDocs() {
   const list = $("docList");
   $("docCount").textContent = state.docs.length;
@@ -103,7 +132,10 @@ function renderDocs() {
         <div class="name" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
         <div class="sub"><span>${doc.pages} página(s) · ${(doc.size / 1048576).toFixed(2)} MB</span>${signed}</div>
       </div>
-      <input class="pagesInput" value="${escapeHtml(state.selectedPages[doc.id] ?? "todas")}" placeholder="todas" title="Páginas a firmar (todas, primera, ultima, 1,3,5-8)">
+      <div class="pagesBox">
+        <span class="pagesLbl">Páginas a firmar</span>
+        <input class="pagesInput" value="${escapeHtml(state.selectedPages[doc.id] ?? "todas")}" placeholder="todas" title="Páginas a firmar (todas, primera, ultima, 1,3,5-8)">
+      </div>
       <div class="actions">
         <button class="ghost open" type="button">Ver</button>
         <button class="ghost del" type="button" title="Quitar documento">✕</button>
@@ -112,6 +144,7 @@ function renderDocs() {
     row.querySelector(".del").onclick = () => removeDoc(doc.id);
     row.querySelector(".pagesInput").oninput = (event) => {
       state.selectedPages[doc.id] = event.target.value;
+      if (state.page.docId === doc.id) drawSignature();
     };
     list.appendChild(row);
   }
@@ -201,9 +234,10 @@ async function uploadPdfs(files) {
 
   $("uploadProgress").hidden = true;
   $("uploadBar").style.width = "0%";
+  const detail = skipped.slice(0, 3).map((s) => `${s.name} → ${s.reason}`).join(" · ");
   $("uploadNote").textContent = added
-    ? `${added} documento(s) cargados${skipped.length ? ` · ${skipped.length} omitidos: ${skipped.slice(0, 3).map((s) => s.name).join(", ")}` : ""}`
-    : "No se cargó ningún PDF";
+    ? `${added} documento(s) cargados${skipped.length ? ` · ${skipped.length} omitido(s): ${detail}${skipped.length > 3 ? " …" : ""}` : ""}`
+    : `No se cargó ningún PDF${skipped.length ? `: ${detail}` : ""}`;
   state.busy = false;
 
   if (!state.selectedDoc && state.docs.length) await openDoc(state.docs[0].id);
@@ -300,12 +334,15 @@ function drawSignature() {
     return;
   }
   const box = $("sigBox2");
-  box.hidden = false;
-  const rect = layoutRect();
-  box.style.left = `${(rect.x / rect.widthPt) * 100}%`;
-  box.style.top = `${(rect.y / rect.heightPt) * 100}%`;
-  box.style.width = `${(rect.w / rect.widthPt) * 100}%`;
-  box.style.height = `${(rect.h / rect.heightPt) * 100}%`;
+  const visible = pageIsSelected(state.page.docId, state.page.index, state.page.total);
+  box.hidden = !visible;
+  if (visible) {
+    const rect = layoutRect();
+    box.style.left = `${(rect.x / rect.widthPt) * 100}%`;
+    box.style.top = `${(rect.y / rect.heightPt) * 100}%`;
+    box.style.width = `${(rect.w / rect.widthPt) * 100}%`;
+    box.style.height = `${(rect.h / rect.heightPt) * 100}%`;
+  }
   updateReadout();
 }
 
@@ -316,15 +353,18 @@ function updateReadout() {
   }
   const rect = layoutRect();
   const cm = (v) => (v / PT_PER_CM).toFixed(2);
-  const text = [
-    `página ${state.page.docId ? "" : ""}${state.page.index}/${state.page.total} · ${rect.widthPt}×${rect.heightPt} pt`,
+  const lines = [
+    `página ${state.page.index}/${state.page.total} · ${rect.widthPt}×${rect.heightPt} pt`,
     `x ${rect.x.toFixed(1)} pt (${cm(rect.x)} cm) · y ${rect.y.toFixed(1)} pt (${cm(rect.y)} cm)`,
     `ancho ${rect.w.toFixed(1)} pt (${cm(rect.w)} cm) · alto ${rect.h.toFixed(1)} pt (${cm(rect.h)} cm)`,
     state.layout.mode === "fraction"
       ? `fracción ${(state.layout.fx * 100).toFixed(1)}% / ${(state.layout.fy * 100).toFixed(1)}% · ancho ${(state.layout.fw * 100).toFixed(1)}%`
       : "modo absoluto (cm)",
-  ].join("\n");
-  $("readout").textContent = text;
+  ];
+  if (!pageIsSelected(state.page.docId, state.page.index, state.page.total)) {
+    lines.push(`esta página NO se firma (selección actual: ${selectedSpec(state.page.docId)})`);
+  }
+  $("readout").textContent = lines.join("\n");
 }
 
 function pushLayout(patch) {

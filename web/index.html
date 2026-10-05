@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Firma masiva de documentos (versión web)</title>
+<title>Firma masiva de documentos</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230078D4'/%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='4.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 34c6-15 11-22 14.5-22 4.2-.3 3 12.5 7.2 15.6 4 3 8.3-4.3 11.3-10.4'/%3E%3Cpath d='M35 27.5c3.2 0 5 5.2 8.2 5.2 3 0 5-4 8-9.2'/%3E%3Cpath d='M9 47h46'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header>
   <div class="brand">
     <span class="logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 17.5c3-1 4.5-6.5 7.5-9.5S15 5 17 6.5"/>
-        <path d="M3 21h18"/>
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3.4 15.6c1.7-4.6 3.1-7.1 4.2-7.4 1.3-.4 1.1 3.4 2.4 4.6 1.2 1.1 2.4-.7 3.5-3"/>
+        <path d="M13.4 9.8c1-.1 1.7.6 2.4 1.7.8 1.1 1.7 1.6 2.6 1 .7-.5 1.2-1.6 1.7-3.1"/>
+        <path d="M3.6 20.3h16.8"/>
       </svg>
     </span>
     <div class="brandText">
@@ -29,13 +31,13 @@
 <main>
   <section class="panel">
     <div class="card notice">
-      <strong>Tus archivos nunca salen de la PC.</strong>
-      Todo se procesa dentro del navegador: no hay servidor, no hay instalación y ningún
-      control de Windows puede bloquearlo. Funciona igual que la versión con Python, con dos
-      límites: no abre PDFs con contraseña y rinde menos con miles de archivos seguidos.
+      <strong>Firma muchos PDF de una vez.</strong>
+      Carga tu firma y tus documentos, elige qué páginas llevan firma, colócala donde
+      quieras en la vista previa y descarga los archivos listos (uno a uno o en un ZIP).
+      Si algún PDF tiene contraseña, escríbela en el paso 5.
     </div>
 
-    <div class="card">
+    <div class="card s1">
       <h2><span class="step">1</span> Firma</h2>
       <div id="sigBox" class="drop" data-kind="signature">
         <img id="sigPreview" alt="Firma" hidden>
@@ -56,7 +58,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card s2">
       <h2><span class="step">2</span> Documentos PDF</h2>
       <div id="pdfBox" class="drop" data-kind="pdf">
         <div class="dropText">
@@ -80,7 +82,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card s3">
       <h2><span class="step">3</span> Documento y páginas a firmar</h2>
       <div class="row">
         <label class="grow">Documento
@@ -96,6 +98,7 @@
         </label>
       </div>
       <div class="hint">Haz clic en la página para poner la firma, arrástrala para moverla y usa el tirador para cambiar su tamaño.</div>
+      <div id="pageSignHint" class="hint warn" hidden></div>
       <div class="stage" id="stage" hidden>
         <div class="pageWrap" id="pageWrap">
           <canvas id="pageCanvas" aria-label="Vista previa de la página"></canvas>
@@ -119,8 +122,28 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card s4">
       <h2><span class="step">4</span> Ubicación de la firma</h2>
+      <div class="row">
+        <label class="grow">Posición
+          <select id="posMode">
+            <option value="all">Una sola posición para todas las páginas</option>
+            <option value="page">Corregir página por página</option>
+          </select>
+        </label>
+      </div>
+      <div class="posBar" id="posPageBar" hidden>
+        <div class="posInfo" id="posInfo">Abre un documento para corregir la posición página por página.</div>
+        <div class="posActions">
+          <button id="btnApplyAll" class="small" type="button">Aplicar esta posición a todas las páginas</button>
+          <span class="rangeBox">
+            <input type="text" id="rangeInput" placeholder="1,3,5-8" aria-label="Rango de páginas">
+            <button id="btnApplyRange" class="small" type="button">Aplicar al rango</button>
+          </span>
+          <button id="btnResetPage" class="ghost small" type="button">Restablecer esta página</button>
+        </div>
+      </div>
+      <div class="hint">En modo <strong>corregir página por página</strong>, mueve o redimensiona la firma en el visor y ese ajuste se guarda solo para la página visible; las demás conservan la posición general.</div>
       <div class="row">
         <label class="grow">Modo
           <select id="modeSelect">
@@ -154,11 +177,15 @@
         </label>
       </div>
 
-      <div class="readout" id="readout">Sin página cargada</div>
     </div>
 
-    <div class="card">
+    <div class="card s5">
       <h2><span class="step">5</span> Firmar</h2>
+      <div class="row">
+        <label class="grow">Contraseña PDF (opcional)
+          <input type="password" id="pdfPassword" placeholder="escríbela aquí si algún archivo la pide">
+        </label>
+      </div>
       <div class="row">
         <label class="grow">Sufijo de los archivos firmados
           <input type="text" id="suffix" value="_firmado">
@@ -177,7 +204,7 @@
   <section class="panel">
     <div class="card">
       <h2>Documentos cargados <span id="docCount" class="badge">0</span></h2>
-      <div class="hint">Páginas: <code>todas</code> · <code>primera</code> · <code>ultima</code> · <code>1,3,5-8</code></div>
+      <div class="hint">En la casilla <strong>Páginas a firmar</strong> de cada documento escribe qué páginas llevan firma: <code>todas</code> · <code>primera</code> · <code>ultima</code> · <code>1,3,5-8</code>. Por defecto: <code>todas</code>.</div>
       <div id="docList" class="docList">
         <div class="note">Aún no hay documentos.</div>
       </div>
@@ -185,12 +212,14 @@
     <div class="card">
       <h2>Cómo se aplica</h2>
       <ul class="tips">
+        <li><strong>Corrección por página:</strong> en el paso 4 elige <em>Corregir página por página</em> y mueve la firma en cada página del visor; ese ajuste se aplica solo a esa página. Con <em>Aplicar al rango</em> lo copias a varias páginas de una vez.</li>
         <li><strong>Proporción de página:</strong> la misma posición relativa en todas las páginas, aunque los documentos tengan tamaños distintos (Carta, A4, oficio).</li>
         <li><strong>Posición fija:</strong> la misma distancia en centímetros desde la esquina superior izquierda de cada página.</li>
         <li>El ancho define el tamaño; la altura se calcula con la proporción real de la imagen de la firma.</li>
         <li>Si el recuadro se sale de la página, se ajusta para que siempre quede dentro.</li>
         <li><strong>Privacidad:</strong> los archivos se abren y se guardan solo en tu navegador; no se suben a internet.</li>
-        <li><strong>Límites:</strong> no abre PDFs protegidos con contraseña (usa la versión con Python para eso).</li>
+        <li><strong>Contraseñas:</strong> si un PDF pide clave, escríbela en "Contraseña PDF" (paso 5) antes de cargarlo. Los PDFs que solo tienen permisos restringidos se abren sin clave.</li>
+        <li><strong>Rendimiento:</strong> los archivos se procesan uno por uno dentro del navegador; con miles de PDFs seguidos tómate tu tiempo.</li>
       </ul>
     </div>
   </section>

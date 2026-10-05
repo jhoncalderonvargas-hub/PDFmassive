@@ -4,10 +4,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "lib/pdf.worker.min.js";
 
 const state = {
   signature: null,
-  aspect: 3,
+  aspect: 1,
   docs: [],
   selectedPages: {},
   layout: { mode: "fraction", fx: 0.6, fy: 0.8, fw: 0.26, x: 0, y: 0, w: 6 },
+  positionMode: "all",
+  pageLayouts: {},
   page: { docId: null, index: 1, total: 0, widthPt: 0, heightPt: 0 },
   pdfDoc: null,
   pdfDocId: null,
@@ -78,11 +80,134 @@ function parsePages(spec, pageCount) {
   return { pages: valid };
 }
 
+function selectedSpecOf(docId) {
+  return state.selectedPages[docId] ?? "todas";
+}
+
+function selectedPagesOf(docId, pageCount) {
+  const parsed = parsePages(selectedSpecOf(docId), pageCount);
+  if (parsed.error || !parsed.pages) return null;
+  return parsed.pages;
+}
+
+function pageIsSelected(docId, index, total) {
+  const pages = selectedPagesOf(docId, total);
+  return pages === null || pages.includes(index - 1);
+}
+
 function applyMode(mode) {
-  state.layout.mode = mode;
-  $("modeSelect").value = mode;
-  $("fractionBox").hidden = mode !== "fraction";
-  $("absoluteBox").hidden = mode !== "absolute";
+  const target = currentEditLayout();
+  target.mode = mode;
+  syncLayoutInputs(target);
+  updatePosBar();
+  drawSignature();
+}
+
+function hasPageOverride(docId, index) {
+  return !!(docId && state.pageLayouts[docId] && state.pageLayouts[docId][index]);
+}
+
+function effectiveLayout(docId, index) {
+  if (state.positionMode === "page" && hasPageOverride(docId, index)) {
+    return state.pageLayouts[docId][index];
+  }
+  return state.layout;
+}
+
+function currentPageLayout() {
+  return effectiveLayout(state.page.docId, state.page.index);
+}
+
+function currentEditLayout() {
+  if (state.positionMode === "page" && state.page.docId) {
+    const map = (state.pageLayouts[state.page.docId] = state.pageLayouts[state.page.docId] || {});
+    if (!map[state.page.index]) map[state.page.index] = { ...effectiveLayout(state.page.docId, state.page.index) };
+    return map[state.page.index];
+  }
+  return state.layout;
+}
+
+function currentDoc() {
+  return state.docs.find((d) => d.id === state.page.docId) || null;
+}
+
+function updatePosBar() {
+  const bar = $("posPageBar");
+  if (!bar) return;
+  bar.hidden = state.positionMode !== "page";
+  const doc = currentDoc();
+  const info = $("posInfo");
+  if (!info) return;
+  if (!doc) {
+    info.textContent = "Abre un documento para corregir la posición página por página.";
+    return;
+  }
+  const custom = hasPageOverride(doc.id, state.page.index);
+  info.innerHTML = `Página <strong>${state.page.index}/${state.page.total || doc.pages}</strong> de <strong>${escapeHtml(doc.name)}</strong> · posición: <strong>${custom ? "personalizada" : "heredada de la general"}</strong>`;
+}
+
+function syncLayoutInputs(layout) {
+  $("modeSelect").value = layout.mode;
+  $("fractionBox").hidden = layout.mode !== "fraction";
+  $("absoluteBox").hidden = layout.mode !== "absolute";
+  $("fx").value = (layout.fx * 100).toFixed(1);
+  $("fy").value = (layout.fy * 100).toFixed(1);
+  $("fw").value = (layout.fw * 100).toFixed(1);
+  $("absX").value = layout.x.toFixed(2);
+  $("absY").value = layout.y.toFixed(2);
+  $("absW").value = layout.w.toFixed(2);
+}
+
+function applyToAllPages() {
+  const doc = currentDoc();
+  if (!doc) return toast("Abre un documento en el visor", "bad");
+  const layout = { ...currentPageLayout() };
+  const map = (state.pageLayouts[doc.id] = state.pageLayouts[doc.id] || {});
+  for (let i = 1; i <= doc.pages; i++) map[i] = { ...layout };
+  updatePosBar();
+  drawSignature();
+  toast(`Posición aplicada a las ${doc.pages} página(s) de ${doc.name}`, "good");
+}
+
+function applyToRange() {
+  const doc = currentDoc();
+  if (!doc) return toast("Abre un documento en el visor", "bad");
+  const spec = $("rangeInput").value;
+  const parsed = parsePages(spec, doc.pages);
+  if (parsed.error) return toast(parsed.error, "bad");
+  const pages = parsed.pages === null
+    ? Array.from({ length: doc.pages }, (_, i) => i)
+    : parsed.pages;
+  if (!pages.length) return toast("Ese rango no incluye páginas válidas de este documento", "bad");
+  const layout = { ...currentPageLayout() };
+  const map = (state.pageLayouts[doc.id] = state.pageLayouts[doc.id] || {});
+  pages.forEach((i) => { map[i + 1] = { ...layout }; });
+  updatePosBar();
+  drawSignature();
+  toast(`Posición aplicada a ${pages.length} página(s) de ${doc.name}`, "good");
+}
+
+function resetPageLayout() {
+  const doc = currentDoc();
+  if (!doc) return toast("Abre un documento en el visor", "bad");
+  if (state.pageLayouts[doc.id]) delete state.pageLayouts[doc.id][state.page.index];
+  syncLayoutInputs(currentPageLayout());
+  updatePosBar();
+  drawSignature();
+  toast("Esta página vuelve a la posición general", "good");
+}
+
+function setPositionMode(mode) {
+  state.positionMode = mode === "page" ? "page" : "all";
+  syncLayoutInputs(currentPageLayout());
+  updatePosBar();
+  drawSignature();
+  toast(
+    state.positionMode === "page"
+      ? "Página por página: cada corrección se guarda solo en la página que estés viendo"
+      : "Una sola posición para todas las páginas",
+    "good"
+  );
 }
 
 function renderDocs() {
@@ -112,11 +237,17 @@ function renderDocs() {
     row.className = "docItem" + (doc.id === current ? " sel" : "");
     row.dataset.id = doc.id;
     row.innerHTML = `
-      <div>
-        <div class="name" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
-        <div class="sub"><span>${doc.pages} página(s) · ${(doc.size / 1048576).toFixed(2)} MB</span></div>
+      <div class="file">
+        <span class="fileIcon" aria-hidden="true">PDF</span>
+        <div class="fileMeta">
+          <div class="name" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
+          <div class="sub"><span>${doc.pages} página(s) · ${(doc.size / 1048576).toFixed(2)} MB</span></div>
+        </div>
       </div>
-      <input class="pagesInput" value="${escapeHtml(state.selectedPages[doc.id] ?? "todas")}" placeholder="todas" title="Páginas a firmar (todas, primera, ultima, 1,3,5-8)">
+      <div class="pagesBox">
+        <span class="pagesLbl">Páginas a firmar</span>
+        <input class="pagesInput" value="${escapeHtml(state.selectedPages[doc.id] ?? "todas")}" placeholder="todas" title="Páginas a firmar (todas, primera, ultima, 1,3,5-8)">
+      </div>
       <div class="actions">
         <button class="ghost open" type="button">Ver</button>
         <button class="ghost del" type="button" title="Quitar documento">✕</button>
@@ -125,6 +256,7 @@ function renderDocs() {
     row.querySelector(".del").onclick = () => removeDoc(doc.id);
     row.querySelector(".pagesInput").oninput = (event) => {
       state.selectedPages[doc.id] = event.target.value;
+      if (state.page.docId === doc.id) drawSignature();
     };
     list.appendChild(row);
   }
@@ -182,7 +314,7 @@ async function uploadSignature(files) {
 
     if (state.signature) URL.revokeObjectURL(state.signature.url);
     state.signature = { bytes, url: displayUrl };
-    state.aspect = canvas.width / canvas.height;
+    state.aspect = canvas.height / canvas.width;
 
     $("sigPreview").src = displayUrl;
     $("sigPreview").hidden = false;
@@ -201,18 +333,61 @@ async function uploadSignature(files) {
 
 function friendlyError(error) {
   const message = String((error && error.message) || error);
-  if (/encrypt/i.test(message)) return "PDF protegido con contraseña (no compatible con esta versión)";
+  if (/encrypt/i.test(message)) return "PDF cifrado que no se pudo abrir";
   if (/invalid|corrupt|parse/i.test(message)) return "El PDF está dañado o no es válido";
   return message.slice(0, 180);
 }
 
-async function inspectPdf(buffer) {
-  let doc;
-  try {
-    doc = await PDFLib.PDFDocument.load(buffer, { throwOnInvalidObject: false, updateMetadata: false });
-  } catch (error) {
-    throw new Error(friendlyError(error));
+function currentPassword() {
+  return ($("pdfPassword").value || "").trim();
+}
+
+async function loadPdf(buffer, password) {
+  const attempts = password ? [password, ""] : [""];
+  let passwordError = false;
+  for (const attempt of attempts) {
+    try {
+      return await PDFLib.PDFDocument.load(buffer, {
+        throwOnInvalidObject: false,
+        updateMetadata: false,
+        password: attempt,
+      });
+    } catch (error) {
+      const message = String((error && error.message) || error);
+      if (/NEEDS PASSWORD|wrong password|password/i.test(message)) {
+        passwordError = true;
+        continue;
+      }
+      throw new Error(friendlyError(error));
+    }
   }
+  if (passwordError) {
+    throw new Error(
+      password
+        ? "La contraseña no es correcta"
+        : "Requiere contraseña: escríbela en 'Contraseña PDF' (paso 5) y vuelve a cargar el archivo"
+    );
+  }
+  throw new Error("No se pudo abrir el PDF");
+}
+
+async function openWithPdfJs(getBytes, password) {
+  try {
+    return await pdfjsLib.getDocument({ data: await getBytes(), password: password || "" }).promise;
+  } catch (error) {
+    const name = String((error && error.name) || "");
+    if (password && name.includes("Password")) {
+      return await pdfjsLib.getDocument({ data: await getBytes(), password: "" }).promise;
+    }
+    if (name.includes("Password")) {
+      throw new Error("Requiere contraseña: escríbela en 'Contraseña PDF' (paso 5)");
+    }
+    throw error;
+  }
+}
+
+async function inspectPdf(buffer, password) {
+  const doc = await loadPdf(buffer, password);
   const pages = doc.getPageCount();
   if (pages < 1) throw new Error("El PDF no tiene páginas");
   return { pages };
@@ -233,7 +408,7 @@ async function uploadPdfs(files) {
     const file = pdfs[index];
     try {
       const buffer = await file.arrayBuffer();
-      const info = await inspectPdf(buffer);
+      const info = await inspectPdf(buffer, currentPassword());
       state.docs.push({
         id: genId(),
         file,
@@ -254,9 +429,10 @@ async function uploadPdfs(files) {
 
   $("uploadProgress").hidden = true;
   $("uploadBar").style.width = "0%";
+  const detail = skipped.slice(0, 3).map((s) => `${s.name} → ${s.reason}`).join(" · ");
   $("uploadNote").textContent = added
-    ? `${added} documento(s) cargados${skipped.length ? ` · ${skipped.length} omitidos: ${skipped.slice(0, 3).map((s) => s.name).join(", ")}` : ""}`
-    : "No se cargó ningún PDF";
+    ? `${added} documento(s) cargados${skipped.length ? ` · ${skipped.length} omitido(s): ${detail}${skipped.length > 3 ? " …" : ""}` : ""}`
+    : `No se cargó ningún PDF${skipped.length ? `: ${detail}` : ""}`;
   state.busy = false;
 
   renderDocs();
@@ -298,7 +474,7 @@ function clearStage() {
   $("pageWrap").classList.remove("loading");
   $("pageTotal").textContent = "/ ?";
   $("pageInput").value = 1;
-  updateReadout();
+  updatePageHint();
 }
 
 async function openDoc(docId, pageIndex = 1) {
@@ -318,8 +494,7 @@ async function loadPage() {
   try {
     if (state.pdfDocId !== doc.id) {
       await closePdf();
-      const buffer = await doc.file.arrayBuffer();
-      state.pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+      state.pdfDoc = await openWithPdfJs(() => doc.file.arrayBuffer(), currentPassword());
       state.pdfDocId = doc.id;
     }
     const total = state.pdfDoc.numPages;
@@ -340,6 +515,8 @@ async function loadPage() {
     $("stageEmpty").hidden = true;
     $("sigBox2").hidden = !state.signature;
     $("btnSign").disabled = !state.signature;
+    syncLayoutInputs(currentPageLayout());
+    updatePosBar();
     drawSignature();
   } catch (error) {
     toast(friendlyError(error), "bad");
@@ -349,18 +526,18 @@ async function loadPage() {
   }
 }
 
-function layoutRect() {
+function layoutRect(layout = currentPageLayout()) {
   const widthPt = state.page.widthPt || 612;
   const heightPt = state.page.heightPt || 792;
   let x, y, w;
-  if (state.layout.mode === "fraction") {
-    w = widthPt * state.layout.fw;
-    x = widthPt * state.layout.fx;
-    y = heightPt * state.layout.fy;
+  if (layout.mode === "fraction") {
+    w = widthPt * layout.fw;
+    x = widthPt * layout.fx;
+    y = heightPt * layout.fy;
   } else {
-    w = state.layout.w * PT_PER_CM;
-    x = state.layout.x * PT_PER_CM;
-    y = state.layout.y * PT_PER_CM;
+    w = layout.w * PT_PER_CM;
+    x = layout.x * PT_PER_CM;
+    y = layout.y * PT_PER_CM;
   }
   const h = w * state.aspect;
   return { x, y, w, h, widthPt, heightPt };
@@ -372,41 +549,38 @@ function drawSignature() {
     return;
   }
   const box = $("sigBox2");
-  box.hidden = false;
-  const rect = layoutRect();
-  box.style.left = `${(rect.x / rect.widthPt) * 100}%`;
-  box.style.top = `${(rect.y / rect.heightPt) * 100}%`;
-  box.style.width = `${(rect.w / rect.widthPt) * 100}%`;
-  box.style.height = `${(rect.h / rect.heightPt) * 100}%`;
-  updateReadout();
+  const visible = pageIsSelected(state.page.docId, state.page.index, state.page.total);
+  box.hidden = !visible;
+  if (visible) {
+    const rect = layoutRect();
+    box.style.left = `${(rect.x / rect.widthPt) * 100}%`;
+    box.style.top = `${(rect.y / rect.heightPt) * 100}%`;
+    box.style.width = `${(rect.w / rect.widthPt) * 100}%`;
+    box.style.height = `${(rect.h / rect.heightPt) * 100}%`;
+  }
+  updatePageHint();
 }
 
-function updateReadout() {
+function updatePageHint() {
+  const node = $("pageSignHint");
+  if (!node) return;
   if (!state.page.widthPt) {
-    $("readout").textContent = "Sin página cargada";
+    node.hidden = true;
+    node.textContent = "";
     return;
   }
-  const rect = layoutRect();
-  const cm = (v) => (v / PT_PER_CM).toFixed(2);
-  const text = [
-    `página ${state.page.index}/${state.page.total} · ${rect.widthPt.toFixed(0)}×${rect.heightPt.toFixed(0)} pt`,
-    `x ${rect.x.toFixed(1)} pt (${cm(rect.x)} cm) · y ${rect.y.toFixed(1)} pt (${cm(rect.y)} cm)`,
-    `ancho ${rect.w.toFixed(1)} pt (${cm(rect.w)} cm) · alto ${rect.h.toFixed(1)} pt (${cm(rect.h)} cm)`,
-    state.layout.mode === "fraction"
-      ? `fracción ${(state.layout.fx * 100).toFixed(1)}% / ${(state.layout.fy * 100).toFixed(1)}% · ancho ${(state.layout.fw * 100).toFixed(1)}%`
-      : "modo absoluto (cm)",
-  ].join("\n");
-  $("readout").textContent = text;
+  const falta = !pageIsSelected(state.page.docId, state.page.index, state.page.total);
+  node.hidden = !falta;
+  node.textContent = falta
+    ? `Esta página no se firma (selección actual: ${selectedSpecOf(state.page.docId)}).`
+    : "";
 }
 
 function pushLayout(patch) {
-  Object.assign(state.layout, patch);
-  $("fx").value = (state.layout.fx * 100).toFixed(1);
-  $("fy").value = (state.layout.fy * 100).toFixed(1);
-  $("fw").value = (state.layout.fw * 100).toFixed(1);
-  $("absX").value = state.layout.x.toFixed(2);
-  $("absY").value = state.layout.y.toFixed(2);
-  $("absW").value = state.layout.w.toFixed(2);
+  const target = currentEditLayout();
+  Object.assign(target, patch);
+  syncLayoutInputs(target);
+  updatePosBar();
   drawSignature();
 }
 
@@ -443,7 +617,7 @@ function initDrag() {
     const heightPt = state.page.heightPt;
 
     if (drag.type === "move") {
-      if (state.layout.mode === "fraction") {
+      if (currentPageLayout().mode === "fraction") {
         const fx = Math.min(Math.max((drag.rect.x + dxPt) / widthPt, 0), 1 - drag.rect.w / widthPt);
         const fy = Math.min(Math.max((drag.rect.y + dyPt) / heightPt, 0), 1 - drag.rect.h / heightPt);
         pushLayout({ fx, fy });
@@ -454,7 +628,7 @@ function initDrag() {
       }
     } else {
       const width = Math.min(Math.max(drag.rect.w + dxPt, 12), widthPt);
-      if (state.layout.mode === "fraction") pushLayout({ fw: width / widthPt });
+      if (currentPageLayout().mode === "fraction") pushLayout({ fw: width / widthPt });
       else pushLayout({ w: width / PT_PER_CM });
     }
   };
@@ -480,7 +654,7 @@ function initDrag() {
     const rect = layoutRect();
     const clickX = (event.clientX - bounds.left) / scale;
     const clickY = (event.clientY - bounds.top) / scale;
-    if (state.layout.mode === "fraction") {
+    if (currentPageLayout().mode === "fraction") {
       pushLayout({
         fx: Math.min(Math.max((clickX - rect.w / 2) / state.page.widthPt, 0), 1),
         fy: Math.min(Math.max((clickY - rect.h / 2) / state.page.heightPt, 0), 1),
@@ -501,17 +675,17 @@ function bindNumber(id, apply) {
   });
 }
 
-function computePdfRect(pageWidth, pageHeight) {
+function computePdfRect(pageWidth, pageHeight, layout = state.layout) {
   const aspect = state.aspect || 1;
   let x, yTop, w;
-  if (state.layout.mode === "fraction") {
-    w = pageWidth * state.layout.fw;
-    x = pageWidth * state.layout.fx;
-    yTop = pageHeight * state.layout.fy;
+  if (layout.mode === "fraction") {
+    w = pageWidth * layout.fw;
+    x = pageWidth * layout.fx;
+    yTop = pageHeight * layout.fy;
   } else {
-    w = state.layout.w * PT_PER_CM;
-    x = state.layout.x * PT_PER_CM;
-    yTop = state.layout.y * PT_PER_CM;
+    w = layout.w * PT_PER_CM;
+    x = layout.x * PT_PER_CM;
+    yTop = layout.y * PT_PER_CM;
   }
   let h = w * aspect;
   if (w > pageWidth) { w = pageWidth; h = w * aspect; }
@@ -563,7 +737,7 @@ async function startSigning() {
     const { doc, pages } = plan[i];
     try {
       const buffer = await doc.file.arrayBuffer();
-      const pdf = await PDFLib.PDFDocument.load(buffer, { throwOnInvalidObject: false, updateMetadata: false });
+      const pdf = await loadPdf(buffer, currentPassword());
       const image = await pdf.embedPng(state.signature.bytes);
       const all = pages === null;
       const targets = all ? Array.from({ length: pdf.getPageCount() }, (_, n) => n) : pages;
@@ -572,7 +746,7 @@ async function startSigning() {
         if (index < 0 || index >= pdf.getPageCount()) continue;
         const page = pdf.getPage(index);
         const { width, height } = page.getSize();
-        const rect = computePdfRect(width, height);
+        const rect = computePdfRect(width, height, effectiveLayout(doc.id, index + 1));
         page.drawImage(image, rect);
         signed++;
       }
@@ -667,7 +841,7 @@ async function init() {
   applyMode(state.layout.mode);
   pushLayout({});
   renderDocs();
-  updateReadout();
+  updatePageHint();
 }
 
 function bindUi() {
@@ -710,12 +884,17 @@ function bindUi() {
   };
 
   $("modeSelect").onchange = (event) => applyMode(event.target.value);
-  bindNumber("fx", (v) => pushLayout({ fx: Math.min(v / 100, 1 - state.layout.fw) }));
+  bindNumber("fx", (v) => pushLayout({ fx: Math.min(v / 100, 1 - currentEditLayout().fw) }));
   bindNumber("fy", (v) => pushLayout({ fy: Math.min(Math.max(v / 100, 0), 1) }));
   bindNumber("fw", (v) => pushLayout({ fw: Math.min(Math.max(v / 100, 0.01), 1) }));
   bindNumber("absX", (v) => pushLayout({ x: Math.max(v, 0) }));
   bindNumber("absY", (v) => pushLayout({ y: Math.max(v, 0) }));
   bindNumber("absW", (v) => pushLayout({ w: Math.min(Math.max(v, 1), 5000) }));
+
+  $("posMode").onchange = (event) => setPositionMode(event.target.value);
+  $("btnApplyAll").onclick = applyToAllPages;
+  $("btnApplyRange").onclick = applyToRange;
+  $("btnResetPage").onclick = resetPageLayout;
 
   $("btnSign").onclick = startSigning;
   $("btnZip").onclick = downloadZip;
