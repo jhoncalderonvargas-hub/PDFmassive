@@ -1,0 +1,25 @@
+﻿<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<pre id="TESTRESULT">pendiente</pre>
+<script src="lib/pdf.min.js"></script>
+<script>
+const PDF_B64 = "JVBERi0xLjcKJcK1wrYKJSBXcml0dGVuIGJ5IE11UERGIDEuMjguMgoKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFIvSW5mbzw8L1Byb2R1Y2VyKE11UERGIDEuMjguMik+Pj4+CmVuZG9iagoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDIvS2lkc1s0IDAgUiA4IDAgUl0+PgplbmRvYmoKCjMgMCBvYmoKPDwvRm9udDw8L2hlbHYgNSAwIFI+Pj4+CmVuZG9iagoKNCAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDYxMiA3OTJdL1JvdGF0ZSAwL1Jlc291cmNlcyAzIDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbNiAwIFIgNyAwIFJdPj4KZW5kb2JqCgo1IDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYS9FbmNvZGluZy9XaW5BbnNpRW5jb2Rpbmc+PgplbmRvYmoKCjYgMCBvYmoKPDwvTGVuZ3RoIDEwNC9GaWx0ZXIvRmxhdGVEZWNvZGU+PgpzdHJlYW0KeNodiDEKhUAMBfucIjdwE3dfFMRCsLET0omdyi++hY3nN8qDYebRRYOTcIoJmzJaZT+p+u3/m6VhP3jpcsaB2go2FOwWpQkZRZMl0/gLFPIWxD4D0IZtnwetjgakX32i0WmmB3mfGvwKZW5kc3RyZWFtCmVuZG9iagoKNyAwIG9iago8PC9MZW5ndGggNjkvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnic4yrkcgrhMlQwAEJDBXMjBTNTI4WQXC79jNScMgVDIDtNIdrG1MDM0MzczNIs1czQyMDY0C42xIvLNYQrkAsAvGQOHAplbmRzdHJlYW0KZW5kb2JqCgo4IDAgb2JqCjw8L1R5cGUvUGFnZS9NZWRpYUJveFswIDAgNjEyIDc5Ml0vUm90YXRlIDAvUmVzb3VyY2VzIDMgMCBSL1BhcmVudCAyIDAgUi9Db250ZW50c1s5IDAgUl0+PgplbmRvYmoKCjkgMCBvYmoKPDwvTGVuZ3RoIDEwMy9GaWx0ZXIvRmxhdGVEZWNvZGU+PgpzdHJlYW0KeNolibEOglAMRfd+Rf+AttBbSQwDCYubSTfjBI846ODi99tAznBz7qEvzUnKUiiHMUbj/FD3au8f64Vz58fVBYrAiAY16c0EAxzrsTv6cGzlLcrOZhISVr/DoNMzb7Qk3ekPcdUY6gplbmRzdHJlYW0KZW5kb2JqCgp4cmVmCjAgMTAKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDQyIDAwMDAwIG4gCjAwMDAwMDAxMjAgMDAwMDAgbiAKMDAwMDAwMDE3OCAwMDAwMCBuIAowMDAwMDAwMjE5IDAwMDAwIG4gCjAwMDAwMDAzMzIgMDAwMDAgbiAKMDAwMDAwMDQyMSAwMDAwMCBuIAowMDAwMDAwNTk0IDAwMDAwIG4gCjAwMDAwMDA3MzEgMDAwMDAgbiAKMDAwMDAwMDgzOCAwMDAwMCBuIAoKdHJhaWxlcgo8PC9TaXplIDEwL1Jvb3QgMSAwIFIvSURbPEMyODVDMjhCNzlDMzk0NTc2REMzODgyMUMyQjFDMzlGPjw1QTBDRjcxODk5RjQ0OEIwRjE2ODY5Mzc4QUM0OEFCMT5dPj4Kc3RhcnR4cmVmCjEwMTAKJSVFT0YK";
+function b64bytes(s){const bin=atob(s);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return arr;}
+(async () => {
+  const res = {};
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "lib/pdf.worker.min.js";
+    const task = pdfjsLib.getDocument({ data: b64bytes(PDF_B64) });
+    const doc = await task.promise;
+    res.pages = doc.numPages;
+    const page = await doc.getPage(1);
+    const vp = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+    res.render = "ok";
+    res.size = canvas.width + "x" + canvas.height;
+  } catch (e) { res.error = String((e && e.message) || e); }
+  document.getElementById("TESTRESULT").textContent = JSON.stringify(res);
+})();
+</script>
+</body></html>

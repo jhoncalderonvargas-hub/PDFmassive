@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firma masiva de documentos</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 17.5c3-1 4.5-6.5 7.5-9.5S15 5 17 6.5"/>
+        <path d="M3 21h18"/>
+      </svg>
+    </span>
+    <div class="brandText">
+      <h1>Firma masiva de documentos</h1>
+      <span class="sub">Coloca tu firma una vez y firma cientos de PDF</span>
+    </div>
+  </div>
+  <div class="meta">
+    <span id="cpuInfo" class="chip"></span>
+    <button id="btnReset" class="ghost" type="button">Nueva sesión</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="card">
+      <h2><span class="step">1</span> Firma</h2>
+      <div id="sigBox" class="drop" data-kind="signature">
+        <img id="sigPreview" alt="Firma" hidden>
+        <div class="dropText">
+          <span class="dropIcon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 17.5c3-1 4.5-6.5 7.5-9.5S15 5 17 6.5"/>
+              <path d="M14 19h7"/>
+            </svg>
+          </span>
+          <strong>Arrastra la imagen de tu firma</strong>
+          <span>PNG con fondo transparente recomendado · o haz clic para buscar</span>
+        </div>
+      </div>
+      <input type="file" id="sigInput" accept="image/*" hidden>
+      <div class="row">
+        <button id="btnClearSig" class="ghost small" type="button" hidden>Quitar firma</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">2</span> Documentos PDF</h2>
+      <div id="pdfBox" class="drop" data-kind="pdf">
+        <div class="dropText">
+          <span class="dropIcon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+              <path d="M14 3v5h5"/>
+              <path d="M12 11v6M9 14h6"/>
+            </svg>
+          </span>
+          <strong>Arrastra o selecciona muchos PDFs</strong>
+          <span>Se cargan por bloques, sin cargarlos todos en memoria</span>
+        </div>
+      </div>
+      <input type="file" id="pdfInput" accept="application/pdf,.pdf" multiple hidden>
+      <div class="progress" id="uploadProgress" hidden><div id="uploadBar"></div></div>
+      <div id="uploadNote" class="note"></div>
+      <div class="row">
+        <button id="btnClearPdfs" class="ghost small" type="button" hidden>Quitar todos</button>
+        <span id="docSummary" class="note"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">3</span> Documento y páginas a firmar</h2>
+      <div class="row">
+        <label class="grow">Documento
+          <select id="docSelect"></select>
+        </label>
+        <label>Página
+          <span class="pager">
+            <button id="prevPage" type="button" aria-label="Página anterior">‹</button>
+            <input type="number" id="pageInput" min="1" value="1">
+            <span id="pageTotal">/ ?</span>
+            <button id="nextPage" type="button" aria-label="Página siguiente">›</button>
+          </span>
+        </label>
+      </div>
+      <div class="hint">Haz clic en la página para poner la firma, arrástrala para moverla y usa el tirador para cambiar su tamaño.</div>
+      <div class="stage" id="stage" hidden>
+        <div class="pageWrap" id="pageWrap">
+          <img id="pageImg" alt="Vista previa de la página">
+          <div class="sigBox" id="sigBox2" hidden>
+            <img id="sigOverlay" alt="firma" hidden>
+            <span class="handle" id="sigHandle"></span>
+          </div>
+        </div>
+      </div>
+      <div id="stageEmpty" class="stage empty">
+        <div class="empty" id="stageEmptyInner">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="3" width="16" height="18" rx="2"/>
+              <path d="M8 8h8M8 12h8M8 16h5"/>
+            </svg>
+          </span>
+          <strong>Vista previa de la página</strong>
+          <span>Carga un PDF para ver aquí cada página y colocar la firma exactamente donde quieres.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">4</span> Ubicación de la firma</h2>
+      <div class="row">
+        <label class="grow">Modo
+          <select id="modeSelect">
+            <option value="fraction">Proporción de la página (se adapta a cada tamaño)</option>
+            <option value="absolute">Posición fija en cm desde la esquina superior izquierda</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="fractionBox" class="grid3">
+        <label>Horizontal (%)
+          <input type="number" id="fx" step="0.5" value="60">
+        </label>
+        <label>Vertical (%)
+          <input type="number" id="fy" step="0.5" value="80">
+        </label>
+        <label>Ancho (% de página)
+          <input type="number" id="fw" step="0.5" value="26">
+        </label>
+      </div>
+
+      <div id="absoluteBox" class="grid3" hidden>
+        <label>Horizontal (cm)
+          <input type="number" id="absX" step="0.1" value="0">
+        </label>
+        <label>Vertical (cm)
+          <input type="number" id="absY" step="0.1" value="0">
+        </label>
+        <label>Ancho (cm)
+          <input type="number" id="absW" step="0.1" value="6">
+        </label>
+      </div>
+
+      <div class="readout" id="readout">Sin página cargada</div>
+      <div id="previewSigNote" class="note"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">5</span> Firmar</h2>
+      <div class="grid2">
+        <label>Contraseña PDF (opcional)
+          <input type="password" id="pdfPassword" placeholder="solo PDFs protegidos">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="optimize">
+          Reducir tamaño del resultado
+        </label>
+      </div>
+      <div class="note auto"><strong id="autoWorkers">–</strong> procesos en paralelo: se usa automáticamente el máximo seguro de este PC para firmar varios documentos a la vez.</div>
+      <div class="row">
+        <label class="grow">Sufijo de los archivos firmados
+          <input type="text" id="suffix" value="_firmado">
+        </label>
+        <button id="btnSign" class="primary" type="button">Firmar documentos</button>
+      </div>
+      <div class="progress" id="signProgress" hidden><div id="signBar"></div></div>
+      <div id="signSummary" class="note"></div>
+      <div id="resultList" class="results"></div>
+      <div class="row end">
+        <a id="btnZip" class="primary buttonlike" href="#" hidden>Descargar todo en ZIP</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="card">
+      <h2>Documentos cargados <span id="docCount" class="badge">0</span></h2>
+      <div class="hint">Páginas: <code>todas</code> · <code>primera</code> · <code>ultima</code> · <code>1,3,5-8</code></div>
+      <div id="docList" class="docList">
+        <div class="note">Aún no hay documentos.</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Cómo se aplica</h2>
+      <ul class="tips">
+        <li><strong>Proporción de página:</strong> la misma posición relativa en todas las páginas, aunque los documentos tengan tamaños distintos (Carta, A4, oficio).</li>
+        <li><strong>Posición fija:</strong> la misma distancia en centímetros desde la esquina superior izquierda de cada página.</li>
+        <li><strong>Procesos en paralelo:</strong> no hay que configurarlo; el programa usa automáticamente el máximo seguro de tu PC (hasta 16) y firma varios documentos a la vez.</li>
+        <li>El ancho define el tamaño; la altura se calcula con la proporción real de la imagen de la firma.</li>
+        <li>Si el recuadro se sale de la página, se ajusta para que siempre quede dentro.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
